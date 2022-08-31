@@ -1,12 +1,16 @@
+"""Implement a simple expression evaluator parses."""
+
+# For easier connection with class examples, we use names such as E or T_prime.
+# pylint: disable=invalid-name
+
 # Language definition:
 #
-# E = G
-# G = F' | TE'
+# E = TE'
 # E' = +TE' | - TE' | &
-# T = FT'
+# T = FT' | F'T'
 # T' = * FT' | / FT' | &
 # F = ( E ) | num
-# F' = F^F | TE'
+# F' = F^F
 # num = [+-]?([0-9]+(.[0-9]+)?|.[0-9]+)(e[0-9]+)+)?)
 
 import re
@@ -102,8 +106,12 @@ def parse_E_prime(data):
 def parse_T(data):
     """Parse an expression T."""
     F = parse_F(data)
+    T_prime = parse_T_prime(data)
     F_prime = parse_F_prime(data)
-    return F if F_prime is None else F ** F_prime
+
+    if F_prime is not None:
+        return F ** F_prime
+    return F if T_prime is None else F * T_prime
 
 def parse_F_prime(data):
     """Parse an expression T'."""
@@ -115,11 +123,8 @@ def parse_F_prime(data):
         F = parse_F(data)
         # We don't need the result of the recursion,
         # only the recuscion itself
-        return F if operator == "^" else 1 / F
-    else:
-        F = parse_F(data)
-        _T_prime = parse_T_prime(data)  # noqa
-        return F if _T_prime is None else F * _T_prime
+        _F_prime = parse_F_prime(data)  # noqa
+        return F if operator == "^" else None
     data.put_back()
     return None
 
@@ -163,9 +168,8 @@ def parse(source_code):
 
 if __name__ == "__main__":
     expressions = [
-        "3 ^ 3",
-        "1 + 1",
-        "2 * 2"
+        "2 + 2 * 3",
+        "3 ^ 3 + 3 * 3"
     ]
     for expression in expressions:
         print(f"Expression: {expression}\t Result: {parse(expression)}")
