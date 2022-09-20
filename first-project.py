@@ -5,7 +5,7 @@
 # P = SP
 # S = IDEQ | E | &
 # EQ = E | &
-# ID = identificator-type | &
+# ID = identificator-attr | &
 # E = TE'
 # E' = +TE' | - TE' | &
 # T = FT' | F'T'
