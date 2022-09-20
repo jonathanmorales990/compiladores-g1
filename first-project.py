@@ -4,7 +4,10 @@
 # pylint: disable=invalid-name
 
 # Language definition:
-#
+# P = SP
+# S = ID
+# S = E
+# ID = E
 # E = TE'
 # E' = +TE' | - TE' | &
 # T = FT' | F'T'
@@ -12,9 +15,13 @@
 # F = ( E ) | num
 # F' = F^F
 # num = [+-]?([0-9]+(.[0-9]+)?|.[0-9]+)(e[0-9]+)+)?)
-
+# var = [a-zA-Z]+
 import re
 
+class Variable:
+    def __init__(self, index, value):
+        self.index = index
+        self.value = value
 
 class Lexer:
     """Implements the expression lexer."""
@@ -23,14 +30,17 @@ class Lexer:
     CLOSE_PAR = 2
     OPERATOR = 3
     NUM = 4
+    VARIABLE = 5
 
     def __init__(self, data):
         """Initialize object."""
         self.data = data
+        self.hashTable = { 'x': 6}
         self.current = 0
         self.previous = -1
         self.num_re = re.compile(r"[+-]?(\d+(\.\d*)?|\.\d+)(e\d+)?")
-
+        self.var_re = re.compile(r"[a-zA-Z]+")
+        # [a-zA-Z]+\=(\d+)
     def __iter__(self):
         """Start the lexer iterator."""
         self.current = 0
@@ -47,24 +57,38 @@ class Lexer:
 
     def put_back(self):
         self.current = self.previous
-
+    def get_id(self, variable):
+        return self.hashTable.get(variable)
+    def add_id(self, value, variable):
+        self.hashTable[variable] = value
+        return value
+    def next_operator(self):
+        char = self.data[self.current + 1]
+        if char in "+/*^=":
+            return (Lexer.OPERATOR, char)
+        return None
     def __next__(self):
-        """Retrieve the next token."""
         if self.current < len(self.data):
             while self.data[self.current] in " \t\n\r":
                 self.current += 1
             self.previous = self.current
             char = self.data[self.current]
             self.current += 1
+
             if char == "(":
                 return (Lexer.OPEN_PAR, char)
             if char == ")":
                 return (Lexer.CLOSE_PAR, char)
-            # Do not handle minus operator.
-            if char in "+/*^":
+            if char in "+/*^=":
                 return (Lexer.OPERATOR, char)
+
+            matchVar = self.var_re.match(self.data[self.current - 1 :])
             match = self.num_re.match(self.data[self.current - 1 :])
-            if match is None:
+
+            if matchVar is not None:
+                self.current += matchVar.end() - 1
+                return (Lexer.VARIABLE, matchVar.group().replace(" ", ""))
+            if match is None and matchVar is None:
                 # If there is no match we may have a minus operator
                 if char == "-":
                     return (Lexer.OPERATOR, char)
@@ -73,8 +97,9 @@ class Lexer:
                     f"Error at {self.current}: "
                     f"{self.data[self.current - 1:self.current + 10]}"
                 )
-            self.current += match.end() - 1
-            return (Lexer.NUM, match.group().replace(" ", ""))
+            else:
+                self.current += match.end() - 1
+                return (Lexer.NUM, match.group().replace(" ", ""))
         raise StopIteration()
 
 
@@ -91,6 +116,7 @@ def parse_E_prime(data):
         token, operator = next(data)
     except StopIteration:
         return None
+
     if token == Lexer.OPERATOR:
         if operator not in "+-":
             data.error(f"Unexpected token: '{operator}'.")
@@ -150,6 +176,7 @@ def parse_F(data):
         token, value = next(data)
     except StopIteration:
         raise Exception("Unexpected end of source.") from None
+
     if token == Lexer.OPEN_PAR:
         E = parse_E(data)
         if next(data) != (Lexer.CLOSE_PAR, ")"):
@@ -157,19 +184,57 @@ def parse_F(data):
         return E
     if token == Lexer.NUM:
         return float(value)
-    raise data.error(f"Unexpected token: {value}.")
+    if token == Lexer.VARIABLE:
+        return data.get_id(value)
+    raise data.error(f"A Unexpected token: {value}.")
 
+def parse_S(data):
+    ID = parse_ID(data)
+    EQ = parse_EQ(data)
+    data.add_id(EQ, ID)
+    if EQ is None:
+        return parse_E(data)
+    return parse_S(data)
+
+def parse_EQ(data):
+    try:
+        token, operator = next(data)
+    except StopIteration:
+        return None
+    if token == Lexer.OPERATOR and operator in "=":
+        return parse_E(data)
+    data.put_back()
+    return None
+
+def parse_ID(data):
+    try:
+        token, value = next(data)
+    except StopIteration:
+        return None
+    if token == Lexer.VARIABLE:
+        if data.next_operator() == (Lexer.OPERATOR, "="):
+            return value
+    data.put_back()
+    return None
+
+def parse_P(data):
+    return parse_S(data)
+    if S is not None:
+        return parse_P(data)
+    else:
+        return S
 
 def parse(source_code):
     """Parse the source code."""
     lexer = Lexer(source_code)
-    return parse_E(lexer)
+    return parse_P(lexer)
 
 
 if __name__ == "__main__":
     expressions = [
-        "2 + 2 * 3",
-        "3 ^ 3 + 3 * 3"
+        "2 + 2 + 2",
+        "2 + 2 ^ 2",
+        "x = 2 ^ 2 c = 2 y = 4 x + y * c"
     ]
     for expression in expressions:
         print(f"Expression: {expression}\t Result: {parse(expression)}")
