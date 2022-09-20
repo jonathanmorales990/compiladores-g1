@@ -3,9 +3,9 @@
 
 # Language definition:
 # P = SP
-# S = IDEQ | E
-# EQ = E
-# ID = identificator
+# S = IDEQ | E | &
+# EQ = E | &
+# ID = identificator-type | &
 # E = TE'
 # E' = +TE' | - TE' | &
 # T = FT' | F'T'
