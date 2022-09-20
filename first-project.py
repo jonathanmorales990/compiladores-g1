@@ -1,19 +1,22 @@
+# G1 Compilers
+# Name: Jonathan Morales, Ricardo and Guilherme
+
 # Language definition:
 # P = SP
-# S = ID
-# S = E
-# ID = E
+# S = IDEQ | E
+# EQ = E
+# ID = identificator
 # E = TE'
 # E' = +TE' | - TE' | &
 # T = FT' | F'T'
 # T' = * FT' | / FT' | &
-# F = ( E ) | num
+# F = ( E ) | number | function | identificator
 # F' = F^F
 # num = [+-]?([0-9]+(.[0-9]+)?|.[0-9]+)(e[0-9]+)+)?)
 # var = [a-zA-Z]+
 
 import re
-
+import math
 
 class ParserError(Exception):
     """An error exception for parser errors."""
@@ -24,15 +27,21 @@ class Lexer:
     CLOSE_PAR = 2
     OPERATOR = 3
     NUM = 4
-    VARIABLE = 5
+    IDENTIFICATOR = 5
 
     def __init__(self, data):
         self.data = data
-        self.hashTable = {}
+        self.hashTable = {
+            'sin': { 'type': 'func', 'func': math.sin },
+            'cos': { 'type': 'func', 'func': math.cos },
+            'tan': { 'type': 'func', 'func': math.tan },
+            'sqrt': { 'type': 'func', 'func': math.sqrt },
+            'log': { 'type': 'func', 'func': math.log10 }
+        }
         self.current = 0
         self.previous = -1
         self.num_re = re.compile(r"[+-]?(\d+(\.\d*)?|\.\d+)(e\d+)?")
-        self.var_re = re.compile(r"[a-zA-Z]+")
+        self.id_re = re.compile(r"[a-zA-Z]+")
 
     def __iter__(self):
         self.current = 0
@@ -49,12 +58,12 @@ class Lexer:
 
     def put_back(self):
         self.current = self.previous
-    def get_id(self, variable):
-        return self.hashTable.get(variable)
-    def add_id(self, value, variable):
-        self.hashTable[variable] = value
+    def get_id(self, identificator):
+        return self.hashTable[identificator]
+    def add_id(self, value, identificator, type):
+        self.hashTable[identificator] = { 'value': value, 'type': type }
         return value
-    def next_operator(self):
+    def lookahead_next_operator(self):
         char = self.data[self.current + 1]
         if char in "+/*^=":
             return (Lexer.OPERATOR, char)
@@ -73,12 +82,13 @@ class Lexer:
                 return (Lexer.CLOSE_PAR, char, current)
             if char in "+/*^=":
                 return (Lexer.OPERATOR, char, current)
-            match = self.num_re.match(self.data[current - 1 :])
-            matchVar = self.var_re.match(self.data[current - 1 :])
 
-            if matchVar is not None:
-                self.current += matchVar.end() - 1
-                return (Lexer.VARIABLE, matchVar.group().replace(" ", ""), current)
+            match = self.num_re.match(self.data[current - 1 :])
+            matchID = self.id_re.match(self.data[current - 1 :])
+
+            if matchID is not None:
+                current += matchID.end() - 1
+                return (Lexer.IDENTIFICATOR, matchID.group().replace(" ", ""), current)
             if match is None:
                 if char == "-":
                     return (Lexer.OPERATOR, char, current)
@@ -115,7 +125,7 @@ def parse_E_prime(data):
         E_prime = parse_E_prime(data)
         return (T if operator == "+" else -1 * T) + (E_prime or 0)
 
-    if token not in [Lexer.OPERATOR, Lexer.OPEN_PAR, Lexer.CLOSE_PAR, Lexer.VARIABLE]:
+    if token not in [Lexer.OPERATOR, Lexer.OPEN_PAR, Lexer.CLOSE_PAR, Lexer.IDENTIFICATOR]:
         data.error(f"Invalid character: {operator}")
 
     data.put_back()
@@ -137,8 +147,6 @@ def parse_F_prime(data):
         return None
     if token == Lexer.OPERATOR and operator in "^":
         F = parse_F(data)
-        # We don't need the result of the recursion,
-        # only the recuscion itself
         _F_prime = parse_F_prime(data)  # noqa
         return F if operator == "^" else None
     data.put_back()
@@ -154,7 +162,7 @@ def parse_T_prime(data):
         T_prime = parse_T_prime(data)
         return (F if operator == "*" else 1 / F) * T_prime
 
-    if token not in [Lexer.OPERATOR, Lexer.OPEN_PAR, Lexer.CLOSE_PAR, Lexer.VARIABLE]:
+    if token not in [Lexer.OPERATOR, Lexer.OPEN_PAR, Lexer.CLOSE_PAR, Lexer.IDENTIFICATOR]:
         data.error(f"Invalid character: {operator}")
 
     data.put_back()
@@ -166,6 +174,7 @@ def parse_F(data):
         token, value = next(data)
     except StopIteration:
         raise Exception("Unexpected end of source.") from None
+
     if token == Lexer.OPEN_PAR:
         E = parse_E(data)
         try:
@@ -176,14 +185,19 @@ def parse_F(data):
         return E
     if token == Lexer.NUM:
         return float(value)
-    if token == Lexer.VARIABLE:
-        return data.get_id(value)
+    if token == Lexer.IDENTIFICATOR:
+        type = data.get_id(value).get('type')
+        if type == 'func':
+            function = data.get_id(value).get('func')
+            F = parse_F(data)
+            return function(F)
+        return data.get_id(value).get('value')
     raise data.error(f"Unexpected token: {value}.")
 
 def parse_S(data):
     ID = parse_ID(data)
     EQ = parse_EQ(data)
-    data.add_id(EQ, ID)
+    data.add_id(EQ, ID, 'var')
     if EQ is None:
         return parse_E(data)
     return parse_S(data)
@@ -203,30 +217,28 @@ def parse_ID(data):
         token, value = next(data)
     except StopIteration:
         return None
-    if token == Lexer.VARIABLE:
-        if data.next_operator() == (Lexer.OPERATOR, "="):
+    if token == Lexer.IDENTIFICATOR:
+        if data.lookahead_next_operator() == (Lexer.OPERATOR, "="):
             return value
     data.put_back()
     return None
 
-def parse_P(data):
-    return parse_S(data)
-    if S is not None:
-        return parse_P(data)
-    else:
-        return S
-
-
 def parse(source_code):
     lexer = Lexer(source_code)
-    return parse_P(lexer)
-
+    return parse_S(lexer)
 
 if __name__ == "__main__":
     expressions = [
-        "2 + 2 + 2",
-        "2 + 2 ^ 2",
-        "x = 2 ^ 2 c = 2 y = 4 x + y * c"
+        ("aa = 1 bb = 2 aa + bb", 1 + 2),
+        ("(2 + 2 + 2) * 4", (2 + 2 + 2) * 4),
+        ("2 + 2 ^ 2", 2 + 2 ** 2),
+        ("a = 2 ^ 2 b = 4 c = 2 (a + b) * c", (2 ** 2 + 4) * 2),
+        ("x = 1 sin(x + 1) + 2", math.sin(1 + 1) + 2),
+        ("x = 4 cos(x) + 2", math.cos(4) + 2),
+        ("tan(12)", math.tan(12)),
+        ("x = 2 y = 2 sqrt(x + y)", math.sqrt(2 + 2)),
+        ("log(1.5)", math.log10(1.5))
     ]
-    for expression in expressions:
-        print(f"Expression: {expression}\t Result: {parse(expression)}")
+    for expression, expected in expressions:
+        result = "PASS" if parse(expression) == expected else "FAIL"
+        print(f"Expression: {expression}\t Result: {parse(expression)} - {result}")
