@@ -1,5 +1,5 @@
 # G1 Compilers
-# Name: Joanthan Morales, Ricardo and Guilherme
+# Name: Jonathan Morales, Ricardo and Guilherme
 
 # Language definition:
 # P = SP
