@@ -1,5 +1,5 @@
 # G1 Compilers
-# Name: Jonathan Morales, Ricardo Cruz and Guilherme
+# Name: Jonathan Morales, Ricardo Cruz and Guilherme Berghann Bach
 
 # Language definition:
 # P = SP
